@@ -1,0 +1,11 @@
+/* my_project/frontend/styles.css */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #f5f5f5;
+}
+
+h1 {
+    color: #333;
+}

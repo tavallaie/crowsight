@@ -1,7 +1,7 @@
 from crowsight.codebase_analyzer import CodebaseAnalyzer
 
 def main():
-    analyzer = CodebaseAnalyzer("./my_project", out_manifest="manifest.json")
+    analyzer = CodebaseAnalyzer("./my_project", manifest="examples/manifest.json")
     analyzer.analyze()
     analyzer.write_manifest()
     print("Functions:", analyzer.find_functions(min_args=2))
