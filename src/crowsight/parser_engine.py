@@ -9,7 +9,8 @@ class ParserEngine:
         ts_parser: a preconfigured tree_sitter.Parser (from get_parser).
         """
         self._parser = ts_parser
-        logger.info(f"Initialized ParserEngine for {ts_parser.language.name}")
+        # Language objects don't have a .name attribute, so just log the parser itself
+        logger.info(f"Initialized ParserEngine with parser {ts_parser!r}")
 
     def parse_wrapped(self, code: bytes) -> NodeWrapper:
         """
@@ -51,21 +52,35 @@ class ParserEngine:
     def find_imports(self, wrapped_root: NodeWrapper):
         logger.debug("Finding import statements")
         results = []
+
         for node in wrapped_root.descendants():
+            # Handle `import a.b.c` statements
             if node.type == "import_statement":
                 mods = [c.text for c in node.descendants() if c.type == "dotted_name"]
-                logger.trace(f"Found imports {mods}")
-                results.extend(mods)
+                if mods:
+                    logger.trace(f"Found import modules: {mods}")
+                    results.extend(mods)
+
+            # Handle `from x.y import a, b` statements
             elif node.type == "import_from_statement":
-                module = node.field("module").text
-                names = [
-                    c.text
-                    for c in node.field("names").descendants()
-                    if c.type == "identifier"
-                ]
-                full = [f"{module}.{n}" for n in names]
-                logger.trace(f"Found from-imports {full}")
-                results.extend(full)
+                module_field = node.field("module")
+                names_field = node.field("names")
+                if module_field and names_field:
+                    module = module_field.text
+                    names = [
+                        c.text
+                        for c in names_field.descendants()
+                        if c.type == "identifier"
+                    ]
+                    full_imports = [f"{module}.{n}" for n in names]
+                    logger.trace(f"Found from-imports: {full_imports}")
+                    results.extend(full_imports)
+                else:
+                    logger.debug(
+                        f"Skipping malformed import_from_statement at "
+                        f"bytes [{node._node.start_byte}:{node._node.end_byte}]"
+                    )
+
         return results
 
     def find_classes(self, wrapped_root: NodeWrapper):
