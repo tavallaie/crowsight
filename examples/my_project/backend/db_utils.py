@@ -11,7 +11,8 @@ def get_connection():
     return conn
 
 
-def get_user_by_id(user_id: int):
+def get_user_by_id(user_id: int, user_auth: str):
+    print(user_auth)
     with get_connection() as conn:
         cur = conn.execute("SELECT id, name, email FROM users WHERE id = ?", (user_id,))
         row = cur.fetchone()

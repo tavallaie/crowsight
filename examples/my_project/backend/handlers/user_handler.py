@@ -1,5 +1,5 @@
 # my_project/backend/handlers/user_handler.py
-from backend.db_utils import get_connection
+from backend.db_utils import get_connection # type: ignore
 
 
 def handle_user_request(data: dict):

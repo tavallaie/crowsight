@@ -1,11 +1,17 @@
-from crowsight.codebase_analyzer import CodebaseAnalyzer
+# examples/usage.py
+
+from crowsight import CodebaseAnalyzer
+from crowsight.filters.node_filter import NodeCategory
 
 def main():
-    analyzer = CodebaseAnalyzer("examples/my_project", manifest="examples/manifest.crs")
-    analyzer.analyze()
-    analyzer.write_manifest()
-    print("Functions:", analyzer.find_functions(min_args=2))
-    print("Imports:", analyzer.find_imports())
+    an = CodebaseAnalyzer("examples/my_project", "examples/project.crs", log_config={"level":"INFO"}, force=True)
+    an.analyze()
+
+    print("Imports:", an.find(node_type=NodeCategory.IMPORT))
+    print("Todos:", an.find(node_type="comment", pattern=r"\bTODO\b|\bFIXME\b"))
+    print("Go functions ≥2 args:",
+          an.find(node_type=NodeCategory.FUNCTION, args_min=2, lang="go"))
+    print("Rust structs:", an.find(node_type="struct_item"))
 
 if __name__ == "__main__":
     main()

@@ -4,21 +4,21 @@ from loguru import logger
 import os
 import sys
 
+from .services.analyzer import CodebaseAnalyzer
+from .filters.node_filter import NodeFilter, NodeCategory
+
+__all__ = ["CodebaseAnalyzer", "NodeFilter", "NodeCategory"]
+
 
 def configure_logger(
     *,
     level: str = "INFO",
-    fmt: str = "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
+    fmt: str = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+    "<level>{level: <8}</level> | {message}",
     sink=None,
 ):
     """
-    Configure Loguru for CrowSight.
-
-    - level: log level ("DEBUG", "INFO", etc.)
-    - fmt: format string
-    - sink: output target (e.g., file path or sys.stdout)
-
-    Honor the CROWSIGHT_LOG_LEVEL environment variable if set.
+    Configure Loguru for CrowSight globally.
     """
     logger.remove()
     sink = sink or sys.stdout
