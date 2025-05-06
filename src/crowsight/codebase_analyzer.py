@@ -1,13 +1,11 @@
-# src/crowsight/codebase_analyzer.py
-
 import json
 from pathlib import Path
-
 from tree_sitter import Language, Parser
 from tree_sitter_language_pack import get_language, get_parser
-
 from .parser_engine import ParserEngine
 from .simple_query import SimpleQuery
+from loguru import logger
+from . import configure_logger
 
 
 class CodebaseAnalyzer:
@@ -19,21 +17,26 @@ class CodebaseAnalyzer:
         "java": "java",
     }
 
-    def __init__(self, path: str, manifest: str = "manifest.json"):
+    def __init__(
+        self,
+        path: str,
+        manifest: str = "manifest.json",
+        log_config: dict = None,
+    ):
+        # 1) Configure logging
+        configure_logger(**(log_config or {}))
+        logger.info(f"Initializing CodebaseAnalyzer on '{path}'")
+
+        # 2) Setup paths and data structures
         self.root = Path(path)
         self.out_manifest = manifest
-
-        # All discovered source files
         self.files: list[Path] = []
-        # Files with unknown extensions
         self.unknowns: list[Path] = []
-        # Mapping lang_name -> [Path, Path, ...]
         self.by_lang: dict[str, list[Path]] = {}
-        # Mapping lang_name -> ParserEngine
         self.parsers: dict[str, ParserEngine] = {}
-        # Mapping Path -> parsed & wrapped AST root
         self.trees: dict[Path, any] = {}
 
+        # 3) Discover and prepare
         self._discover_files()
         self._group_by_language()
         self._init_parsers()
@@ -42,7 +45,6 @@ class CodebaseAnalyzer:
         if self.root.is_file():
             self.files = [self.root]
         else:
-            # Recursively find files whose extension is in EXT_LANG_MAP
             for p in self.root.rglob("*"):
                 if not p.is_file():
                     continue
@@ -51,45 +53,51 @@ class CodebaseAnalyzer:
                     self.files.append(p)
                 else:
                     self.unknowns.append(p)
+        logger.info(
+            f"Discovered {len(self.files)} supported files, "
+            f"{len(self.unknowns)} unknown files"
+        )
 
     def _group_by_language(self):
         for f in self.files:
             lang = self.EXT_LANG_MAP[f.suffix.lstrip(".")]
             self.by_lang.setdefault(lang, []).append(f)
+        logger.debug(
+            f"Files grouped by language: { {k: len(v) for k,v in self.by_lang.items()} }"
+        )
 
     def _init_parsers(self):
-        # For each language detected, get its pre-built parser and wrap it
-        for lang, files in self.by_lang.items():
-            ts_parser = get_parser(lang)  # returns a tree_sitter.Parser
+        for lang in self.by_lang:
+            ts_parser = get_parser(lang)
             self.parsers[lang] = ParserEngine(ts_parser)
+        logger.info(f"Initialized parsers for languages: {list(self.parsers.keys())}")
 
     def analyze(self):
-        """Parse each file once and store the wrapped AST."""
+        logger.info("Starting analysis of codebase")
         for lang, files in self.by_lang.items():
             engine = self.parsers[lang]
+            logger.info(f"Parsing {len(files)} '{lang}' files")
             for f in files:
+                logger.debug(f"Parsing file {f}")
                 code = f.read_bytes()
                 self.trees[f] = engine.parse_wrapped(code)
+        logger.success("Analysis complete")
 
     def write_manifest(self):
         manifest = {
             "by_language": {
-                lang: [str(p) for p in files] for lang, files in self.by_lang.items()
+                lang: [str(p) for p in fs] for lang, fs in self.by_lang.items()
             },
             "unknown_files": [str(p) for p in self.unknowns],
         }
         with open(self.out_manifest, "w", encoding="utf-8") as fp:
             json.dump(manifest, fp, indent=2)
-        print(f"Manifest written to {self.out_manifest!r}")
+        logger.success(f"Manifest written to '{self.out_manifest}'")
 
     def run_query(self, pattern: str):
-        """
-        Run a raw S-expression query across all parsed trees.
-        Returns a dict mapping file-path → list of (capture_name, text).
-        """
         results: dict[str, list[tuple[str, str]]] = {}
         for lang, files in self.by_lang.items():
-            ts_lang = get_language(lang)  # Language object
+            ts_lang = get_language(lang)
             sq = SimpleQuery(ts_lang)
             for f in files:
                 wrapped = self.trees.get(f)
@@ -99,8 +107,6 @@ class CodebaseAnalyzer:
                 if caps:
                     results[str(f)] = [(name, node.text) for name, node in caps]
         return results
-
-    # High-level helpers
 
     def find_functions(self, min_args: int = 0):
         out = {}
@@ -140,24 +146,27 @@ class CodebaseAnalyzer:
 
     def register_custom(self, ext: str, so_path: str, lang_name: str):
         """
-        Register a custom grammar for extension `ext` (e.g. 'mylang'),
-        loading from the compiled shared lib at `so_path`. After registering,
-        you can call analyze() again to parse any newly-matched files.
+        Register a custom grammar:
+        - ext: file extension (no dot)
+        - so_path: path to compiled Tree-sitter .so
+        - lang_name: language identifier
         """
-        # 1. Map new extension to language name
+        # Map extension → lang
         self.EXT_LANG_MAP[ext] = lang_name
 
-        # 2. Discover any files with this extension
+        # Discover new files
         for p in self.root.rglob(f"*.{ext}"):
             if p.is_file():
+                logger.debug(f"Registering custom file {p} for '{lang_name}'")
                 self.files.append(p)
                 self.by_lang.setdefault(lang_name, []).append(p)
 
-        # 3. Load the new grammar
+        # Load grammar and parser
         ts_lang = Language(so_path, lang_name)
         parser = Parser()
         parser.set_language(ts_lang)
         self.parsers[lang_name] = ParserEngine(parser)
+        logger.success(f"Registered custom language '{lang_name}' for *.{ext}")
 
     def _lang_of(self, path: Path) -> str:
         return self.EXT_LANG_MAP[path.suffix.lstrip(".")]
